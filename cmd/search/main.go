@@ -13,19 +13,38 @@ import (
 func main() {
 
 	var directory string
+	var index string
 
 	flag.StringVar(&directory, "directory", ".", "The directory to index")
-	
+	flag.StringVar(&index, "index", "", "...")
+
 	flag.Parse()
 
 	idx := indexer.New()
-	err := idx.IndexDirectory(directory)
 
-	if err != nil {
-		log.Fatalf("Failed to index directory, %v", err)
+	if index != "" {
+
+		index_r, err := os.Open(index)
+
+		if err != nil {
+			log.Fatalf("Failed to open index, %v", err)
+		}
+
+		defer index_r.Close()
+
+		err = idx.Import(index_r)
+
+		if err != nil {
+			log.Fatalf("Failed to import index, %v", err)
+		}
+
+	} else {
+		err := idx.IndexDirectory(directory)
+
+		if err != nil {
+			log.Fatalf("Failed to index directory, %v", err)
+		}
 	}
-
-	log.Println("done")
 
 	var searchTerm string
 	for {
@@ -36,7 +55,7 @@ func main() {
 		fmt.Println("--------------")
 		fmt.Println(len(res), "index result(s)")
 		fmt.Println("")
-		
+
 		for _, r := range res {
 			fmt.Println(idx.IdToFile(r))
 			matching := findMatchingLines(idx.IdToFile(r), searchTerm, 5)

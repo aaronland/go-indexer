@@ -3,15 +3,15 @@ package indexer
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"io"
-	"encoding/json"
 )
 
 type Index struct {
@@ -25,7 +25,7 @@ type Index struct {
 
 type Export struct {
 	BloomFilter []uint64 `json:"bloom_filter"`
-	IdToFile []string `json:"id_to_file"`
+	IdToFile    []string `json:"id_to_file"`
 }
 
 func New() *Index {
@@ -46,7 +46,7 @@ func (idx *Index) Export(wr io.Writer) error {
 
 	ex := Export{
 		BloomFilter: idx.bloomFilter,
-		IdToFile: idx.idToFile,
+		IdToFile:    idx.idToFile,
 	}
 
 	enc := json.NewEncoder(wr)
@@ -373,4 +373,3 @@ func runeSize(b byte) int {
 	}
 	return 1
 }
-

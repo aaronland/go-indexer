@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	
+
 	"github.com/aaronland/go-indexer"
 )
 
@@ -14,18 +14,18 @@ func main() {
 
 	var directory string
 	var index string
-	
+
 	flag.StringVar(&directory, "directory", ".", "The directory to index")
-	flag.StringVar(&index, "index", "", "")	
-	
+	flag.StringVar(&index, "index", "", "")
+
 	flag.Parse()
 
 	abs_dir, err := filepath.Abs(directory)
-	
+
 	if err != nil {
 		log.Fatalf("Failed to derive absolute path for directory, %v", err)
 	}
-	
+
 	idx := indexer.New()
 	err = idx.IndexDirectory(abs_dir)
 
@@ -38,7 +38,7 @@ func main() {
 		base := filepath.Base(abs_dir)
 		index = fmt.Sprintf("%s.idx", base)
 	}
-	
+
 	wr, err := os.OpenFile(index, os.O_RDWR|os.O_CREATE, 0600)
 
 	if err != nil {
