@@ -1,43 +1,40 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/aaronland/go-indexer"
+	"github.com/sfomuseum/go-flags/multi"
+	_ "gocloud.dev/blob/fileblob"
+	_ "gocloud.dev/blob/memblob"
 )
 
 func main() {
 
-	var directory string
+	var bucket_uris multi.MultiString
 	var index string
 
-	flag.StringVar(&directory, "directory", ".", "The directory to index")
+	flag.Var(&bucket_uris, "bucket-uri", "...")
 	flag.StringVar(&index, "index", "", "")
 
 	flag.Parse()
 
-	abs_dir, err := filepath.Abs(directory)
-
-	if err != nil {
-		log.Fatalf("Failed to derive absolute path for directory, %v", err)
-	}
-
-	dir_fs := os.DirFS(abs_dir)
+	ctx := context.Background()
 
 	idx := indexer.NewIndex()
-	err = idx.IndexFS(dir_fs)
+	defer idx.Close()
+
+	err := idx.IndexBuckets(ctx, bucket_uris...)
 
 	if err != nil {
-		log.Fatalf("Failed to index directory, %v", err)
+		log.Fatalf("Failed to index buckets, %v", err)
 	}
 
 	if index == "" {
-		base := filepath.Base(abs_dir)
-		index = fmt.Sprintf("%s.idx", base)
+		index = "indexer.idx"
 	}
 
 	wr, err := os.OpenFile(index, os.O_RDWR|os.O_CREATE, 0600)

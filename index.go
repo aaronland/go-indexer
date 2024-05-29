@@ -3,14 +3,18 @@ package indexer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"sort"
 	"strings"
+
+	"github.com/aaronland/gocloud-blob/bucket"
+	"github.com/aaronland/gocloud-blob/walk"
+	"gocloud.dev/blob"
 )
 
 // Index implements a bloom filter based search index
@@ -20,13 +24,21 @@ type Index struct {
 	currentDocumentCount           int
 	currentBlockStartDocumentCount int
 	trigramMethod                  string
-	idToFile                       []string
+	idToFile                       []*File
+	buckets                        map[string]*blob.Bucket
+	bucketURIs                     map[string]int
+}
+
+type File struct {
+	Path     string `json:"path"`
+	BucketId int    `json:"bucket_id`
 }
 
 // Archive implements a struct containing data for serializing and deserializing `Index` instances
 type Archive struct {
-	BloomFilter []uint64 `json:"bloom_filter"`
-	IdToFile    []string `json:"id_to_file"`
+	BloomFilter []uint64       `json:"bloom_filter"`
+	IdToFile    []*File        `json:"id_to_file"`
+	BucketURIs  map[string]int `json:"bucket_uris"`
 }
 
 // NewIndex returns a new (and empty) `Index` instance
@@ -38,17 +50,28 @@ func NewIndex() *Index {
 		currentDocumentCount:           0,
 		currentBlockStartDocumentCount: 0,
 		trigramMethod:                  "default",
-		idToFile:                       make([]string, 0),
+		idToFile:                       make([]*File, 0),
+		buckets:                        make(map[string]*blob.Bucket),
+		bucketURIs:                     make(map[string]int),
 	}
 
 	return i
 }
 
-func (idx *Index) IndexFS(filesystems ...fs.FS) error {
+func (idx *Index) IndexBuckets(ctx context.Context, bucket_uris ...string) error {
 
-	for i, this_fs := range filesystems {
+	for i, uri := range bucket_uris {
 
-		err := idx.indexFS(this_fs)
+		b, err := bucket.OpenBucket(ctx, uri)
+
+		if err != nil {
+			return fmt.Errorf("Failed to open bucket for '%s', %w", uri, err)
+		}
+
+		idx.buckets[uri] = b
+		idx.bucketURIs[uri] = i
+
+		err = idx.indexBucket(ctx, b, i)
 
 		if err != nil {
 			return fmt.Errorf("Failed to index filesystem at index %d, %w", i, err)
@@ -58,37 +81,42 @@ func (idx *Index) IndexFS(filesystems ...fs.FS) error {
 	return nil
 }
 
-func (idx *Index) indexFS(this_fs fs.FS) error {
+func (idx *Index) indexBucket(ctx context.Context, b *blob.Bucket, i int) error {
 
-	walk_func := func(path string, info fs.DirEntry, err error) error {
+	walk_cb := func(ctx context.Context, obj *blob.ListObject) error {
 
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
+		if obj.IsDir {
 			return nil // we only care about files
 		}
 
-		err = idx.IndexFile(this_fs, path)
+		err := idx.IndexObject(ctx, b, i, obj)
 
 		if err != nil {
-			return fmt.Errorf("Failed to index %s, %w", path, err)
+			return fmt.Errorf("Failed to index %s, %w", obj.Key, err)
 		}
 
 		return nil
 	}
 
-	return fs.WalkDir(this_fs, ".", walk_func)
+	return walk.WalkBucket(ctx, b, walk_cb)
 }
 
-func (idx *Index) IndexFile(this_fs fs.FS, path string) error {
+func (idx *Index) IndexObject(ctx context.Context, b *blob.Bucket, i int, obj *blob.ListObject) error {
 
-	res, err := fs.ReadFile(this_fs, path)
+	// Replace with NewRangeReader...
+	r, err := b.NewReader(ctx, obj.Key, nil)
 
 	if err != nil {
-		slog.Error("Failed to read file", "path", path, "error", err)
+		slog.Error("Failed to read file", "path", obj.Key, "error", err)
 		return nil // swallow error
+	}
+
+	defer r.Close()
+
+	res, err := io.ReadAll(r)
+
+	if err != nil {
+		return nil
 	}
 
 	// don't index binary files by looking for nul byte, similar to how grep does it
@@ -110,7 +138,12 @@ func (idx *Index) IndexFile(this_fs fs.FS, path string) error {
 
 	// store the association from what's in the index to the filename, we know its 0 to whatever so this works
 
-	idx.idToFile = append(idx.idToFile, path)
+	f := &File{
+		Path:     obj.Key,
+		BucketId: i,
+	}
+
+	idx.idToFile = append(idx.idToFile, f)
 	return nil
 }
 
@@ -277,7 +310,49 @@ func (idx *Index) PrintIndex() {
 	}
 }
 
-func (idx *Index) IdToFile(id uint32) string {
+func (idx *Index) OpenFile(ctx context.Context, id uint32) (io.ReadCloser, error) {
+
+	f := idx.idToFile[id]
+
+	if f == nil {
+		return nil, fmt.Errorf("Not found")
+	}
+
+	var bucket_uri string
+
+	for uri, idx := range idx.bucketURIs {
+
+		if idx == f.BucketId {
+			bucket_uri = uri
+			break
+		}
+	}
+
+	if bucket_uri == "" {
+		return nil, fmt.Errorf("Failed to derive bucket URI for file")
+	}
+
+	var b *blob.Bucket
+
+	v, exists := idx.buckets[bucket_uri]
+
+	if exists {
+		b = v
+	} else {
+
+		b, err := bucket.OpenBucket(ctx, bucket_uri)
+
+		if err != nil {
+			return nil, fmt.Errorf("Failed to open bucket, %w", err)
+		}
+
+		idx.buckets[bucket_uri] = b
+	}
+
+	return b.NewReader(ctx, f.Path, nil)
+}
+
+func (idx *Index) IdToFile(id uint32) *File {
 	return idx.idToFile[id]
 }
 
@@ -286,6 +361,7 @@ func (idx *Index) Archive() *Archive {
 	a := &Archive{
 		BloomFilter: idx.bloomFilter,
 		IdToFile:    idx.idToFile,
+		BucketURIs:  idx.bucketURIs,
 	}
 
 	return a
@@ -311,6 +387,16 @@ func (idx *Index) Import(r io.Reader) error {
 
 	idx.bloomFilter = a.BloomFilter
 	idx.idToFile = a.IdToFile
+	idx.bucketURIs = a.BucketURIs
+
+	return nil
+}
+
+func (idx *Index) Close() error {
+
+	for _, b := range idx.buckets {
+		b.Close()
+	}
 
 	return nil
 }
