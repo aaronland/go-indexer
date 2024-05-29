@@ -10,7 +10,6 @@ import (
 	"github.com/aaronland/go-indexer"
 	"github.com/sfomuseum/go-flags/multi"
 	_ "gocloud.dev/blob/fileblob"
-	_ "gocloud.dev/blob/memblob"
 )
 
 func main() {

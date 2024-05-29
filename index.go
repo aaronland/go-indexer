@@ -106,7 +106,7 @@ func (idx *Index) IndexObject(ctx context.Context, b *blob.Bucket, i int, obj *b
 	r, err := b.NewReader(ctx, obj.Key, nil)
 
 	if err != nil {
-		slog.Error("Failed to read file", "path", obj.Key, "error", err)
+		slog.Warn("Failed to open file for reading", "path", obj.Key, "error", err)
 		return nil // swallow error
 	}
 
@@ -115,6 +115,7 @@ func (idx *Index) IndexObject(ctx context.Context, b *blob.Bucket, i int, obj *b
 	res, err := io.ReadAll(r)
 
 	if err != nil {
+		slog.Warn("Failed to read file", "path", obj.Key, "error", err)
 		return nil
 	}
 
