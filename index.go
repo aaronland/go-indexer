@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/aaronland/gocloud-blob/bucket"
 	"github.com/aaronland/gocloud-blob/walk"
@@ -25,19 +27,21 @@ type Index struct {
 	trigramMethod                  string
 	idToFile                       []*File
 	buckets                        map[string]*blob.Bucket
-	bucketURIs                     map[string]int
+	bucketURIs                     map[string]uint32
+	maxBucketId                    uint32
+	maxBytes                       int64
 }
 
 type File struct {
 	Path     string `json:"path"`
-	BucketId int    `json:"bucket_id`
+	BucketId uint32 `json:"bucket_id`
 }
 
 // Archive implements a struct containing data for serializing and deserializing `Index` instances
 type Archive struct {
-	BloomFilter []uint64       `json:"bloom_filter"`
-	IdToFile    []*File        `json:"id_to_file"`
-	BucketURIs  map[string]int `json:"bucket_uris"`
+	BloomFilter []uint64          `json:"bloom_filter"`
+	IdToFile    []*File           `json:"id_to_file"`
+	BucketURIs  map[string]uint32 `json:"bucket_uris"`
 }
 
 // NewIndex returns a new (and empty) `Index` instance
@@ -51,7 +55,9 @@ func NewIndex() *Index {
 		trigramMethod:                  "default",
 		idToFile:                       make([]*File, 0),
 		buckets:                        make(map[string]*blob.Bucket),
-		bucketURIs:                     make(map[string]int),
+		bucketURIs:                     make(map[string]uint32),
+		maxBucketId:                    uint32(0),
+		maxBytes:                       int64(5000),
 	}
 
 	return i
@@ -67,10 +73,12 @@ func (idx *Index) IndexBuckets(ctx context.Context, bucket_uris ...string) error
 			return fmt.Errorf("Failed to open bucket for '%s', %w", uri, err)
 		}
 
-		idx.buckets[uri] = b
-		idx.bucketURIs[uri] = i
+		bucket_id := atomic.AddUint32(&idx.maxBucketId, uint32(i))
 
-		err = idx.indexBucket(ctx, b, i)
+		idx.buckets[uri] = b
+		idx.bucketURIs[uri] = bucket_id
+
+		err = idx.indexBucket(ctx, b, bucket_id)
 
 		if err != nil {
 			return fmt.Errorf("Failed to index filesystem at index %d, %w", i, err)
@@ -80,7 +88,7 @@ func (idx *Index) IndexBuckets(ctx context.Context, bucket_uris ...string) error
 	return nil
 }
 
-func (idx *Index) indexBucket(ctx context.Context, b *blob.Bucket, i int) error {
+func (idx *Index) indexBucket(ctx context.Context, b *blob.Bucket, bucket_id uint32) error {
 
 	walk_cb := func(ctx context.Context, obj *blob.ListObject) error {
 
@@ -88,7 +96,7 @@ func (idx *Index) indexBucket(ctx context.Context, b *blob.Bucket, i int) error 
 			return nil // we only care about files
 		}
 
-		err := idx.IndexObject(ctx, b, i, obj)
+		err := idx.IndexObject(ctx, b, bucket_id, obj)
 
 		if err != nil {
 			return fmt.Errorf("Failed to index %s, %w", obj.Key, err)
@@ -100,10 +108,9 @@ func (idx *Index) indexBucket(ctx context.Context, b *blob.Bucket, i int) error 
 	return walk.WalkBucket(ctx, b, walk_cb)
 }
 
-func (idx *Index) IndexObject(ctx context.Context, b *blob.Bucket, i int, obj *blob.ListObject) error {
+func (idx *Index) IndexObject(ctx context.Context, b *blob.Bucket, bucket_id uint32, obj *blob.ListObject) error {
 
-	// Replace with NewRangeReader...
-	r, err := b.NewReader(ctx, obj.Key, nil)
+	r, err := b.NewRangeReader(ctx, obj.Key, 0, idx.maxBytes, nil)
 
 	if err != nil {
 		slog.Warn("Failed to open file for reading", "path", obj.Key, "error", err)
@@ -124,11 +131,6 @@ func (idx *Index) IndexObject(ctx context.Context, b *blob.Bucket, i int, obj *b
 		return nil
 	}
 
-	// only index up to about 5kb
-	if len(res) > 5000 {
-		res = res[:5000]
-	}
-
 	// add the document to the index
 	err = idx.Add(Itemise(idx.Tokenize(string(res))))
 
@@ -140,7 +142,7 @@ func (idx *Index) IndexObject(ctx context.Context, b *blob.Bucket, i int, obj *b
 
 	f := &File{
 		Path:     obj.Key,
-		BucketId: i,
+		BucketId: bucket_id,
 	}
 
 	idx.idToFile = append(idx.idToFile, f)
@@ -430,6 +432,11 @@ func (idx *Index) ImportArchive(ctx context.Context, r io.Reader) error {
 
 	if err != nil {
 		return err
+	}
+
+	for _, id := range a.BucketURIs {
+		max := math.Max(float64(id), float64(atomic.LoadUint32(&idx.maxBucketId)))
+		atomic.StoreUint32(&idx.maxBucketId, uint32(max))
 	}
 
 	idx.bloomFilter = a.BloomFilter
