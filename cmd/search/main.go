@@ -4,11 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
-	"os"
-	"strings"
 
 	"github.com/aaronland/go-indexer"
 	"github.com/sfomuseum/go-flags/multi"
@@ -19,10 +16,10 @@ import (
 func main() {
 
 	var bucket_uris multi.MultiString
-	var index string
+	var index_uri string
 
 	flag.Var(&bucket_uris, "bucket-uri", "...")
-	flag.StringVar(&index, "index", "", "...")
+	flag.StringVar(&index_uri, "index-uri", "", "...")
 
 	flag.Parse()
 
@@ -31,17 +28,9 @@ func main() {
 	idx := indexer.NewIndex()
 	defer idx.Close()
 
-	if index != "" {
+	if index_uri != "" {
 
-		index_r, err := os.Open(index)
-
-		if err != nil {
-			log.Fatalf("Failed to open index, %v", err)
-		}
-
-		defer index_r.Close()
-
-		err = idx.Import(index_r)
+		err := idx.ImportArchiveWithURI(ctx, index_uri)
 
 		if err != nil {
 			log.Fatalf("Failed to import index, %v", err)

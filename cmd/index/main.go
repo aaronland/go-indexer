@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"log"
-	"os"
 
 	"github.com/aaronland/go-indexer"
 	"github.com/sfomuseum/go-flags/multi"
@@ -15,10 +14,10 @@ import (
 func main() {
 
 	var bucket_uris multi.MultiString
-	var index string
+	var index_uri string
 
 	flag.Var(&bucket_uris, "bucket-uri", "...")
-	flag.StringVar(&index, "index", "", "")
+	flag.StringVar(&index_uri, "index-uri", "cwd:///indexer.ix", "")
 
 	flag.Parse()
 
@@ -33,25 +32,9 @@ func main() {
 		log.Fatalf("Failed to index buckets, %v", err)
 	}
 
-	if index == "" {
-		index = "indexer.idx"
-	}
-
-	wr, err := os.OpenFile(index, os.O_RDWR|os.O_CREATE, 0600)
-
-	if err != nil {
-		log.Fatalf("Failed to open %s for writing, %v", err)
-	}
-
-	err = idx.Export(wr)
+	err = idx.ExportArchiveWithURI(ctx, index_uri)
 
 	if err != nil {
 		log.Fatalf("Failed to export index, %v", err)
-	}
-
-	err = wr.Close()
-
-	if err != nil {
-		log.Fatalf("Failed to close %s after writing, %v", index, err)
 	}
 }

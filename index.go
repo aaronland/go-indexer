@@ -1,4 +1,3 @@
-// caisson contains the code used to index
 package indexer
 
 import (
@@ -333,19 +332,19 @@ func (idx *Index) OpenFile(ctx context.Context, id uint32) (io.ReadCloser, error
 	}
 
 	var b *blob.Bucket
-
-	v, exists := idx.buckets[bucket_uri]
+	open_b, exists := idx.buckets[bucket_uri]
 
 	if exists {
-		b = v
+		b = open_b
 	} else {
 
-		b, err := bucket.OpenBucket(ctx, bucket_uri)
+		new_b, err := bucket.OpenBucket(ctx, bucket_uri)
 
 		if err != nil {
 			return nil, fmt.Errorf("Failed to open bucket, %w", err)
 		}
 
+		b = new_b
 		idx.buckets[bucket_uri] = b
 	}
 
@@ -367,14 +366,61 @@ func (idx *Index) Archive() *Archive {
 	return a
 }
 
-func (idx *Index) Export(wr io.Writer) error {
+func (idx *Index) ExportArchiveWithURI(ctx context.Context, archive_uri string) error {
+
+	b, key, err := deriveBucketAndKey(ctx, archive_uri)
+
+	if err != nil {
+		return fmt.Errorf("Failed to open bucket (%s) derived from index URI, %w", archive_uri, err)
+	}
+
+	defer b.Close()
+
+	wr, err := b.NewWriter(ctx, key, nil)
+
+	if err != nil {
+		return fmt.Errorf("Failed to create new writer for archive, %w", err)
+	}
+
+	err = idx.ExportArchive(ctx, wr)
+
+	if err != nil {
+		return fmt.Errorf("Failed to export archive, %w", err)
+	}
+
+	return wr.Close()
+}
+
+func (idx *Index) ExportArchive(ctx context.Context, wr io.Writer) error {
 
 	a := idx.Archive()
 	enc := json.NewEncoder(wr)
 	return enc.Encode(a)
 }
 
-func (idx *Index) Import(r io.Reader) error {
+func (idx *Index) ImportArchiveWithURI(ctx context.Context, archive_uri string) error {
+
+	b, key, err := deriveBucketAndKey(ctx, archive_uri)
+
+	if err != nil {
+		return fmt.Errorf("Failed to open bucket (%s) derived from index URI, %w", archive_uri, err)
+	}
+
+	defer b.Close()
+
+	index_r, err := b.NewReader(ctx, key, nil)
+
+	if err != nil {
+		return fmt.Errorf("Failed to open index %s for reading, %w", key, err)
+	}
+
+	defer index_r.Close()
+
+	return idx.ImportArchive(ctx, index_r)
+
+}
+
+func (idx *Index) ImportArchive(ctx context.Context, r io.Reader) error {
 
 	var a *Archive
 
