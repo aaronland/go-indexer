@@ -32,6 +32,11 @@ type Index struct {
 	maxBytes                       int64
 }
 
+type IndexOptions struct {
+	Method string
+	MaxBytes int64
+}
+
 type File struct {
 	Path     string `json:"path"`
 	BucketId uint32 `json:"bucket_id`
@@ -44,20 +49,35 @@ type Archive struct {
 	BucketURIs  map[string]uint32 `json:"bucket_uris"`
 }
 
+func DefaultIndexOptions() *IndexOptions {
+	
+	opts := &IndexOptions{
+		Method: "default",
+		MaxBytes: int64(5000),
+	}
+
+	return opts
+}
+
 // NewIndex returns a new (and empty) `Index` instance
 func NewIndex() *Index {
+	opts := DefaultIndexOptions()
+	return NewIndexWithOptions(opts)
+}
+
+func NewIndexWithOptions(opts *IndexOptions) *Index {	
 
 	i := &Index{
 		currentBlockDocumentCount:      0,
 		bloomFilter:                    make([]uint64, 0),
 		currentDocumentCount:           0,
 		currentBlockStartDocumentCount: 0,
-		trigramMethod:                  "default",
+		trigramMethod:                  opts.Method,
 		idToFile:                       make([]*File, 0),
 		buckets:                        make(map[string]*blob.Bucket),
 		bucketURIs:                     make(map[string]uint32),
 		maxBucketId:                    uint32(0),
-		maxBytes:                       int64(5000),
+		maxBytes:                       opts.MaxBytes,
 	}
 
 	return i
