@@ -21,7 +21,7 @@ func main() {
 
 	flag.Parse()
 
-	idx := indexer.New()
+	idx := indexer.NewIndex()
 
 	if index != "" {
 

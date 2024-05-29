@@ -28,7 +28,7 @@ func main() {
 
 	dir_fs := os.DirFS(abs_dir)
 
-	idx := indexer.New()
+	idx := indexer.NewIndex()
 	err = idx.IndexFS(dir_fs)
 
 	if err != nil {

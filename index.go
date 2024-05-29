@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -14,6 +13,7 @@ import (
 	"strings"
 )
 
+// Index implements a bloom filter based search index
 type Index struct {
 	currentBlockDocumentCount      int
 	bloomFilter                    []uint64
@@ -23,12 +23,14 @@ type Index struct {
 	idToFile                       []string
 }
 
-type Export struct {
+// Archive implements a struct containing data for serializing and deserializing `Index` instances
+type Archive struct {
 	BloomFilter []uint64 `json:"bloom_filter"`
 	IdToFile    []string `json:"id_to_file"`
 }
 
-func New() *Index {
+// NewIndex returns a new (and empty) `Index` instance
+func NewIndex() *Index {
 
 	i := &Index{
 		currentBlockDocumentCount:      0,
@@ -40,38 +42,6 @@ func New() *Index {
 	}
 
 	return i
-}
-
-func (idx *Index) Export(wr io.Writer) error {
-
-	ex := Export{
-		BloomFilter: idx.bloomFilter,
-		IdToFile:    idx.idToFile,
-	}
-
-	enc := json.NewEncoder(wr)
-	return enc.Encode(ex)
-}
-
-func (idx *Index) Import(r io.Reader) error {
-
-	var ex *Export
-
-	dec := json.NewDecoder(r)
-	err := dec.Decode(&ex)
-
-	if err != nil {
-		return err
-	}
-
-	idx.bloomFilter = ex.BloomFilter
-	idx.idToFile = ex.IdToFile
-
-	return nil
-}
-
-func (idx *Index) IdToFile(id uint32) string {
-	return idx.idToFile[id]
 }
 
 func (idx *Index) IndexFS(filesystems ...fs.FS) error {
@@ -100,32 +70,48 @@ func (idx *Index) indexFS(this_fs fs.FS) error {
 			return nil // we only care about files
 		}
 
-		res, err := fs.ReadFile(this_fs, path)
+		err = idx.IndexFile(this_fs, path)
 
 		if err != nil {
-			slog.Error("Failed to read file", "path", path, "error", err)
-			return nil // swallow error
+			return fmt.Errorf("Failed to index %s, %w", path, err)
 		}
-
-		// don't index binary files by looking for nul byte, similar to how grep does it
-		if bytes.IndexByte(res, 0) != -1 {
-			return nil
-		}
-
-		// only index up to about 5kb
-		if len(res) > 5000 {
-			res = res[:5000]
-		}
-
-		// add the document to the index
-		_ = idx.Add(Itemise(idx.Tokenize(string(res))))
-		// store the association from what's in the index to the filename, we know its 0 to whatever so this works
-		idx.idToFile = append(idx.idToFile, path)
 
 		return nil
 	}
 
 	return fs.WalkDir(this_fs, ".", walk_func)
+}
+
+func (idx *Index) IndexFile(this_fs fs.FS, path string) error {
+
+	res, err := fs.ReadFile(this_fs, path)
+
+	if err != nil {
+		slog.Error("Failed to read file", "path", path, "error", err)
+		return nil // swallow error
+	}
+
+	// don't index binary files by looking for nul byte, similar to how grep does it
+	if bytes.IndexByte(res, 0) != -1 {
+		return nil
+	}
+
+	// only index up to about 5kb
+	if len(res) > 5000 {
+		res = res[:5000]
+	}
+
+	// add the document to the index
+	err = idx.Add(Itemise(idx.Tokenize(string(res))))
+
+	if err != nil {
+		return err
+	}
+
+	// store the association from what's in the index to the filename, we know its 0 to whatever so this works
+
+	idx.idToFile = append(idx.idToFile, path)
+	return nil
 }
 
 // Search the results we need to look at very quickly using only bit operations
@@ -291,96 +277,40 @@ func (idx *Index) PrintIndex() {
 	}
 }
 
-// Ngrams given input splits it according the requested size
-// such that you can get trigrams or whatever else is required
-func Ngrams(text string, size int) []string {
-	var runes = []rune(text)
-
-	var ngrams []string
-
-	for i := 0; i < len(runes); i++ {
-		if i+size < len(runes)+1 {
-			ngram := runes[i : i+size]
-			ngrams = append(ngrams, string(ngram))
-		}
-	}
-
-	return ngrams
+func (idx *Index) IdToFile(id uint32) string {
+	return idx.idToFile[id]
 }
 
-// GetFill returns the % value of how much this doc was filled, allowing for
-// determining if the index will be overfilled for this document
-func GetFill(doc []bool) float64 {
-	count := 0
-	for _, i := range doc {
-		if i {
-			count++
-		}
+func (idx *Index) Archive() *Archive {
+
+	a := &Archive{
+		BloomFilter: idx.bloomFilter,
+		IdToFile:    idx.idToFile,
 	}
 
-	return float64(count) / float64(BloomSize) * 100
+	return a
 }
 
-// HashBloom hashes a single token/word 3 times to give us the entry
-// locations we need for our bloomFilter filter
-func HashBloom(word []byte) []uint64 {
-	var hashes []uint64
+func (idx *Index) Export(wr io.Writer) error {
 
-	h1 := fnv.New64a()
-	h2 := fnv.New64()
-
-	// 3 hashes is probably OK for our purposes
-	// but to be really like Bing it should change this
-	// based on how common/rare the term is where
-	// rarer terms are hashes more
-
-	_, _ = h1.Write(word)
-	hashes = append(hashes, h1.Sum64()%BloomSize)
-	h1.Reset()
-
-	_, _ = h2.Write(word)
-	hashes = append(hashes, h2.Sum64()%BloomSize)
-
-	_, _ = h1.Write(word)
-	_, _ = h1.Write([]byte("salt")) // anything works here
-	hashes = append(hashes, h1.Sum64()%BloomSize)
-	h1.Reset()
-
-	return hashes
+	a := idx.Archive()
+	enc := json.NewEncoder(wr)
+	return enc.Encode(a)
 }
 
-// RemoveUInt64Duplicates removes duplicate values from uint64 slice
-func RemoveUInt64Duplicates(s []uint64) []uint64 {
-	if len(s) < 2 {
-		return s
-	}
-	sort.Slice(s, func(x, y int) bool { return s[x] > s[y] })
-	var e = 1
-	for i := 1; i < len(s); i++ {
-		if s[i] == s[i-1] {
-			continue
-		}
-		s[e] = s[i]
-		e++
+func (idx *Index) Import(r io.Reader) error {
+
+	var a *Archive
+
+	dec := json.NewDecoder(r)
+	err := dec.Decode(&a)
+
+	if err != nil {
+		return err
 	}
 
-	return s[:e]
-}
+	idx.bloomFilter = a.BloomFilter
+	idx.idToFile = a.IdToFile
 
-// runeSize returns rune size given its first byte.
-// Returns 1 if invalid first byte.
-func runeSize(b byte) int {
-	if b < 0xC2 {
-		return 1
-	}
-	if b < 0xE0 {
-		return 2
-	}
-	if b < 0xF0 {
-		return 3
-	}
-	if b < 0xF5 {
-		return 4
-	}
-	return 1
+	return nil
 }
