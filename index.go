@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"os"
-	"path/filepath"
+	"io/fs"
+	"log/slog"
 	"sort"
 	"strings"
 )
@@ -74,11 +74,23 @@ func (idx *Index) IdToFile(id uint32) string {
 	return idx.idToFile[id]
 }
 
-func (idx *Index) IndexDirectory(root string) error {
+func (idx *Index) IndexFS(filesystems ...fs.FS) error {
 
-	// walk the directory getting files and indexing
+	for i, this_fs := range filesystems {
 
-	err := filepath.Walk(".", func(root string, info os.FileInfo, err error) error {
+		err := idx.indexFS(this_fs)
+
+		if err != nil {
+			return fmt.Errorf("Failed to index filesystem at index %d, %w", i, err)
+		}
+	}
+
+	return nil
+}
+
+func (idx *Index) indexFS(this_fs fs.FS) error {
+
+	walk_func := func(path string, info fs.DirEntry, err error) error {
 
 		if err != nil {
 			return err
@@ -88,8 +100,10 @@ func (idx *Index) IndexDirectory(root string) error {
 			return nil // we only care about files
 		}
 
-		res, err := os.ReadFile(root)
+		res, err := fs.ReadFile(this_fs, path)
+
 		if err != nil {
+			slog.Error("Failed to read file", "path", path, "error", err)
 			return nil // swallow error
 		}
 
@@ -106,15 +120,12 @@ func (idx *Index) IndexDirectory(root string) error {
 		// add the document to the index
 		_ = idx.Add(Itemise(idx.Tokenize(string(res))))
 		// store the association from what's in the index to the filename, we know its 0 to whatever so this works
-		idx.idToFile = append(idx.idToFile, root)
-		return nil
-	})
+		idx.idToFile = append(idx.idToFile, path)
 
-	if err != nil {
-		return err
+		return nil
 	}
 
-	return nil
+	return fs.WalkDir(this_fs, ".", walk_func)
 }
 
 // Search the results we need to look at very quickly using only bit operations

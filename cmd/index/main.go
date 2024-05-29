@@ -26,8 +26,10 @@ func main() {
 		log.Fatalf("Failed to derive absolute path for directory, %v", err)
 	}
 
+	dir_fs := os.DirFS(abs_dir)
+
 	idx := indexer.New()
-	err = idx.IndexDirectory(abs_dir)
+	err = idx.IndexFS(dir_fs)
 
 	if err != nil {
 		log.Fatalf("Failed to index directory, %v", err)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/aaronland/go-indexer"
@@ -39,7 +40,16 @@ func main() {
 		}
 
 	} else {
-		err := idx.IndexDirectory(directory)
+
+		abs_dir, err := filepath.Abs(directory)
+
+		if err != nil {
+			log.Fatalf("Failed to derive absolute path for directory, %v", err)
+		}
+
+		dir_fs := os.DirFS(abs_dir)
+
+		err = idx.IndexFS(dir_fs)
 
 		if err != nil {
 			log.Fatalf("Failed to index directory, %v", err)
