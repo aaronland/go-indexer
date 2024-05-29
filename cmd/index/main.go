@@ -36,7 +36,6 @@ func main() {
 	}
 
 	if index == "" {
-
 		base := filepath.Base(abs_dir)
 		index = fmt.Sprintf("%s.idx", base)
 	}
