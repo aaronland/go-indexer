@@ -131,6 +131,10 @@ _Note: In the example above results from indexing the `.git` folder were exclude
 * It does not remove individual items from existing indices.
 * Probably none of the other things you'd like it to do.
 
+## gocloud.dev/blob bucket support
+
+Currently only local files on disk are supported using the `file://` scheme. Shortly the "guts" of the code for the tools in [cmd](cmd/) folder will be moved in to library code allowing for the creation of custom `search` and `index` tools targeting other bucket schemes.
+
 ## See also
 
 * https://github.com/boyter/indexer
