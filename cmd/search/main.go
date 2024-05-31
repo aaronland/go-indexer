@@ -17,8 +17,8 @@ func main() {
 	var bucket_uris multi.MultiString
 	var index_uri string
 
-	flag.Var(&bucket_uris, "bucket-uri", "...")
-	flag.StringVar(&index_uri, "index-uri", "", "...")
+	flag.Var(&bucket_uris, "bucket-uri", "One or more valid gocloud.dev/blob bucket URIs to index. The URI 'cwd://` will be interpreted as the current working directory on the local disk.")
+	flag.StringVar(&index_uri, "index-uri", "", "An optional valid gocloud.dev/blob bucket URIs containing the filename of the index (archive) to load (instead of indexing things from scratch). The URI scheme 'cwd://' will be interpreted as the current working directory on the local disk.")
 
 	flag.Parse()
 
