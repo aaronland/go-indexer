@@ -55,7 +55,6 @@ func main() {
 		fmt.Println("")
 
 		for _, id := range res {
-			fmt.Println(idx.IdToFile(id))
 
 			r, err := idx.OpenFile(ctx, id)
 
@@ -68,12 +67,16 @@ func main() {
 
 			matching := indexer.FindMatchingLines(r, searchTerm, 5)
 
+			if len(matching) == 0 {
+				continue
+			}
+
+			fmt.Println(idx.IdToFile(id))
+			
 			for _, l := range matching {
 				fmt.Println(l)
 			}
-			if len(matching) == 0 {
-				// fmt.Println("false positive match")
-			}
+			
 			fmt.Println("")
 		}
 	}
