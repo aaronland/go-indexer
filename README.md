@@ -126,7 +126,7 @@ _Note: In the example above results from indexing the `.git` folder were exclude
 
 ## Things this package doesn't do (yet)
 
-* There is no way to exclude certain files from being indexed yet so be careful what you choose to index.
+* There is no way to exclude certain files from being indexed yet. This is on the "to do" list but has not happened yet so **be mindful of what you choose to index**.
 * It does not do incremental updates to existing indices.
 * It does not remove individual items from existing indices.
 * Probably none of the other things you'd like it to do.
