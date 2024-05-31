@@ -6,6 +6,7 @@ toolchain go1.22.3
 
 require (
 	github.com/aaronland/gocloud-blob v0.0.17
+	github.com/jackdoe/go-pager v0.0.0-20200410205908-3cd8effcdd34
 	github.com/sfomuseum/go-flags v0.10.0
 	gocloud.dev v0.37.0
 )

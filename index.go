@@ -42,6 +42,10 @@ type File struct {
 	BucketId uint32 `json:"bucket_id`
 }
 
+func (f *File) String() string {
+	return f.Path
+}
+
 // Archive implements a struct containing data for serializing and deserializing `Index` instances
 type Archive struct {
 	BloomFilter []uint64          `json:"bloom_filter"`

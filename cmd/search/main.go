@@ -10,6 +10,7 @@ import (
 	"github.com/aaronland/go-indexer"
 	"github.com/sfomuseum/go-flags/multi"
 	_ "gocloud.dev/blob/fileblob"
+	"github.com/jackdoe/go-pager"
 )
 
 func main() {
@@ -44,6 +45,9 @@ func main() {
 		}
 	}
 
+	p, close := pager.Pager("less", "more","cat")
+	defer close()
+	
 	var searchTerm string
 	for {
 		fmt.Println("enter search term: ")
@@ -53,7 +57,7 @@ func main() {
 		fmt.Println("--------------")
 		fmt.Println(len(res), "index result(s)")
 		fmt.Println("")
-
+		
 		for _, id := range res {
 
 			r, err := idx.OpenFile(ctx, id)
@@ -71,14 +75,20 @@ func main() {
 				continue
 			}
 
-			fmt.Println(idx.IdToFile(id))
+			// fmt.Println(idx.IdToFile(id))
 			
+			f := idx.IdToFile(id)
+			p.Write([]byte(f.String()))
+				
 			for _, l := range matching {
-				fmt.Println(l)
+				// fmt.Println(l)
+				p.Write([]byte(l + "\n"))
 			}
 			
-			fmt.Println("")
+			// fmt.Println("")
+			p.Write([]byte("\n"))
 		}
+
 	}
 
 }
