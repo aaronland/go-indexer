@@ -23,7 +23,7 @@ go build -mod vendor -ldflags="-s -w" -o bin/search cmd/search/main.go
 $> ./bin/index -bucket-uri cwd:// -index-uri cwd:///index.idx
 $> du -h index.idx 
 1.2M	index.idx
-``
+```
 
 ### search
 
